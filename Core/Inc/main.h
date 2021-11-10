@@ -74,6 +74,17 @@ void Error_Handler(void);
 #define FLASH_CS_GPIO_Port GPIOD
 #define LCD_RST_Pin GPIO_PIN_13
 #define LCD_RST_GPIO_Port GPIOD
+
+#define BUT_RIGHT_GPIO_Port GPIOE
+#define BUT_RIGHT_Pin GPIO_PIN_3
+#define BUT_UP_GPIO_Port GPIOE
+#define BUT_UP_Pin GPIO_PIN_1
+#define BUT_LEFT_GPIO_Port GPIOE
+#define BUT_LEFT_Pin GPIO_PIN_5
+#define BUT_ENTER_GPIO_Port GPIOA
+#define BUT_ENTER_Pin GPIO_PIN_0
+#define BUT_DOWN_GPIO_Port GPIOE
+#define BUT_DOWN_Pin GPIO_PIN_6
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */

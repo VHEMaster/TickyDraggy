@@ -3,6 +3,7 @@
 #include "graph.h"
 #include "RREFont.h"
 #include "gps.h"
+#include "controls.h"
 #include <math.h>
 #include <stdio.h>
 #include <limits.h>
@@ -47,7 +48,12 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  GPS_TIM_Callback(htim);
+  static uint8_t gps_cnt = 0;
+  if(++gps_cnt >= 10) {
+    GPS_TIM_Callback(htim);
+    gps_cnt = 0;
+  }
+  controls_irq();
 }
 
 #define LIST_SIZE 5
@@ -93,6 +99,9 @@ uint8_t index_speed = 0;
 uint8_t index_distance = 0;
 uint16_t graph_index = 0;
 float time;
+uint8_t graph_relative = 0;
+float temp_last;
+float temp_best;
 
 int main(void)
 {
@@ -147,7 +156,7 @@ int main(void)
         if(status == 0)
           status = 1;
 
-        if(status == 1 && tick - speed_nzero_t > 2000)
+        if(status == 1 && tick - speed_nzero_t > 1000)
         {
           status = 2;
           start_lat = GPS_Data.Latitude;
@@ -226,6 +235,41 @@ int main(void)
         }
       }
 
+      if(BUT_ENTER_PRESS && BUT_ENTER_TIME > 500) {
+        for(int i = 0; i < LIST_SIZE; i++) {
+          list_last_speeds[i] = 0;
+          list_last_distances[i] = 0;
+          list_best_speeds[i] = 0;
+          list_best_distances[i] = 0;
+        }
+        for(int i = 0; i < GRAPH_SIZE; i++) {
+          graph_time[i] = 0;
+          graph_speed[i] = 0;
+        }
+        speed_nzero_t = tick;
+        BUT_ENTER_TIME = 0;
+        status = 1;
+        stats_changed = 1;
+      }
+
+      if(BUT_LEFT || BUT_RIGHT) {
+        graph_relative ^= 1;
+        BUT_LEFT = 0;
+        BUT_RIGHT = 0;
+        stats_changed = 1;
+      }
+
+      if((BUT_UP_PRESS && BUT_UP_TIME > 200) || (BUT_DOWN_PRESS && BUT_DOWN_TIME > 200)) {
+        if(status == 1) {
+          status = 2;
+          start_lat = GPS_Data.Latitude;
+          start_lng = GPS_Data.Longtitude;
+        }
+      }
+
+      font_setColor2(COLOR_WHITE,COLOR_BLACK);
+      font_setFont(&rre_ubuntu_32);
+      font_setSpacing(2);
       if(oldstatus != status) {
         oldstatus = status;
         if(status == 0) {
@@ -248,14 +292,11 @@ int main(void)
           speed_color = COLOR_LGRAY;
           status_str = "Undefined";
         }
-
-        font_setColor2(COLOR_WHITE,COLOR_BLACK);
-        font_setFont(&rre_ubuntu_32);
-        font_setSpacing(2);
         graph_square_bg(COLOR_BLACK, COLOR_BLACK, 0, 36 ,853 , 36 + font_getHeight());
         font_printf(20,36,"Status: %s", status_str);
       }
 
+      font_printStr(600,36, graph_relative ? "Relative " : "Absolute ");
 
       if(oldspeed != speed || speed_color != speed_color_old) {
         oldspeed = speed;
@@ -281,7 +322,6 @@ int main(void)
       font_printf(10, 10, "GPS: %s   Used satelites: %d   Lat: %9.6f Lng: %9.6f   Accuracy: %4.1fm     ", GPS_Data.FixType ? "OK" : "NG", GPS_Data.SatelitesUsed, GPS_Data.Latitude, GPS_Data.Longtitude, GPS_Data.Accuracy);
       font_printf(680, 10, "%d.%02d.%04d %02d:%02d:%02d.%02d     ", GPS_Data.DateDay, GPS_Data.DateMonth, GPS_Data.DateYear+2000, GPS_Data.TimeHour, GPS_Data.TimeMinute, GPS_Data.TimeSecond, GPS_Data.TimeSubSecond);
 
-
       if(stats_changed) {
         stats_changed = 0;
         font_setColor2(COLOR_WHITE,COLOR_BLACK);
@@ -297,26 +337,30 @@ int main(void)
         strcpy(string, "Best");
         font_printStr(830 - font_strWidth(string), 120-36, string);
         graph_line(600-90, 120-8, 840, 120-8, COLOR_DGRAY);
+        temp_last = 0;
+        temp_best = 0;
         for(int i = 0; i < LIST_SIZE; i++) {
           font_setColor2(COLOR_WHITE,COLOR_BLACK);
           sprintf(string, "%d km/h", list_speeds[i]);
           font_printStr(600 - font_strWidth(string), 120+i*30, string);
 
           if(list_last_speeds[i] > 0.0f)
-            sprintf(string, "%.1f s", list_last_speeds[i]);
+            sprintf(string, "%.1f s", list_last_speeds[i] - temp_last);
           else {
             font_setColor2(COLOR_DGRAY,COLOR_BLACK);
             strcpy(string, "---");
           }
+          if(graph_relative) temp_last = list_last_speeds[i];
           font_printStr(735 - font_strWidth(string), 120+i*30, string);
 
           font_setColor2(COLOR_WHITE,COLOR_BLACK);
           if(list_best_speeds[i] > 0.0f)
-            sprintf(string, "%.1f s", list_best_speeds[i]);
+            sprintf(string, "%.1f s", list_best_speeds[i] - temp_best);
           else {
             font_setColor2(COLOR_DGRAY,COLOR_BLACK);
             strcpy(string, "---");
           }
+          if(graph_relative) temp_best = list_best_speeds[i];
           font_printStr(830 - font_strWidth(string), 120+i*30, string);
         }
 
@@ -328,26 +372,30 @@ int main(void)
         strcpy(string, "Best");
         font_printStr(830 - font_strWidth(string), 310-36, string);
         graph_line(600-90, 310-8, 840, 310-8, COLOR_DGRAY);
+        temp_last = 0;
+        temp_best = 0;
         for(int i = 0; i < LIST_SIZE; i++) {
           font_setColor2(COLOR_WHITE,COLOR_BLACK);
           sprintf(string, "%d m", list_distances[i]);
           font_printStr(600 - font_strWidth(string), 310+i*30, string);
 
           if(list_last_distances[i] > 0.0f)
-            sprintf(string, "%.1f s", list_last_distances[i]);
+            sprintf(string, "%.1f s", list_last_distances[i] - temp_last);
           else {
             font_setColor2(COLOR_DGRAY,COLOR_BLACK);
             strcpy(string, "---");
           }
+          if(graph_relative) temp_last = list_last_distances[i];
           font_printStr(735 - font_strWidth(string), 310+i*30, string);
 
           font_setColor2(COLOR_WHITE,COLOR_BLACK);
           if(list_best_distances[i] > 0.0f)
-            sprintf(string, "%.1f s", list_best_distances[i]);
+            sprintf(string, "%.1f s", list_best_distances[i] - temp_best);
           else {
             font_setColor2(COLOR_DGRAY,COLOR_BLACK);
             strcpy(string, "---");
           }
+          if(graph_relative) temp_best = list_best_distances[i];
           font_printStr(830 - font_strWidth(string), 310+i*30, string);
         }
 
@@ -578,7 +626,7 @@ static void MX_TIM6_Init(void)
   htim6.Instance = TIM6;
   htim6.Init.Prescaler = 7199;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 499;
+  htim6.Init.Period = 49;
   htim6.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
@@ -709,6 +757,16 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin = BUT_LEFT_Pin|BUT_RIGHT_Pin|BUT_UP_Pin|BUT_DOWN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin = BUT_ENTER_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI4_IRQn, 0, 0);
