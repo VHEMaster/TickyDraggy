@@ -66,6 +66,13 @@ float list_best_distances[LIST_SIZE] = {0};
 float list_last_speeds[LIST_SIZE] = {0};
 float list_last_distances[LIST_SIZE] = {0};
 
+float list_best_speeds_relative[LIST_SIZE] = {0};
+float list_best_distances_relative[LIST_SIZE] = {0};
+float list_last_speeds_relative[LIST_SIZE] = {0};
+float list_last_distances_relative[LIST_SIZE] = {0};
+float speed_rel_last = 0.0f;
+float dist_rel_last = 0.0f;
+
 #define GRAPH_SIZE 1200
 
 float graph_time[GRAPH_SIZE];
@@ -100,8 +107,6 @@ uint8_t index_distance = 0;
 uint16_t graph_index = 0;
 float time;
 uint8_t graph_relative = 0;
-float temp_last;
-float temp_best;
 
 int main(void)
 {
@@ -176,11 +181,15 @@ int main(void)
             for(int i = 0; i < LIST_SIZE; i++) {
               list_last_speeds[i] = 0;
               list_last_distances[i] = 0;
+              list_last_speeds_relative[i] = 0;
+              list_last_distances_relative[i] = 0;
             }
             for(int i = 0; i < GRAPH_SIZE; i++) {
               graph_time[i] = 0;
               graph_speed[i] = 0;
             }
+            speed_rel_last = 0.0f;
+            dist_rel_last = 0.0f;
             stats_changed = 1;
           }
         }
@@ -192,20 +201,20 @@ int main(void)
 
           distance = GPS_Distance(start_lng, start_lat, GPS_Data.Longtitude, GPS_Data.Latitude);
           time = ((float)(tick-start_time)) * 0.001f;
-          if(index_speed < LIST_SIZE) {
-            if(speedf >= list_speeds[index_speed]) {
-              list_last_speeds[index_speed] = time;
-              index_speed++;
-              stats_changed = 1;
-            }
+          while(index_speed < LIST_SIZE && speedf >= list_speeds[index_speed]) {
+            list_last_speeds[index_speed] = time;
+            list_last_speeds_relative[index_distance] = time - speed_rel_last;
+            speed_rel_last = time;
+            index_speed++;
+            stats_changed = 1;
           }
 
-          if(index_distance < LIST_SIZE) {
-            if(distance >= list_distances[index_distance]) {
-              list_last_distances[index_distance] = time;
-              index_distance++;
-              stats_changed = 1;
-            }
+          while(index_distance < LIST_SIZE && distance >= list_distances[index_distance]) {
+            list_last_distances[index_distance] = time;
+            list_last_distances_relative[index_distance] = time - dist_rel_last;
+            dist_rel_last = time;
+            index_distance++;
+            stats_changed = 1;
           }
 
           if(graph_index < GRAPH_SIZE) {
@@ -221,11 +230,15 @@ int main(void)
             for(int i = 0; i < index_speed; i++) {
               if(list_best_speeds[i] == 0 || list_last_speeds[i] < list_best_speeds[i])
                 list_best_speeds[i] = list_last_speeds[i];
+              if(list_best_speeds_relative[i] == 0 || list_last_speeds_relative[i] < list_best_speeds_relative[i])
+                list_best_speeds_relative[i] = list_last_speeds_relative[i];
             }
 
             for(int i = 0; i < index_distance; i++) {
               if(list_best_distances[i] == 0 || list_last_distances[i] < list_best_distances[i])
                 list_best_distances[i] = list_last_distances[i];
+              if(list_best_distances_relative[i] == 0 || list_last_distances_relative[i] < list_best_distances_relative[i])
+                list_best_distances_relative[i] = list_last_distances_relative[i];
             }
 
             stats_changed = 1;
@@ -241,6 +254,10 @@ int main(void)
           list_last_distances[i] = 0;
           list_best_speeds[i] = 0;
           list_best_distances[i] = 0;
+          list_last_speeds_relative[i] = 0;
+          list_last_distances_relative[i] = 0;
+          list_best_speeds_relative[i] = 0;
+          list_best_distances_relative[i] = 0;
         }
         for(int i = 0; i < GRAPH_SIZE; i++) {
           graph_time[i] = 0;
@@ -337,30 +354,30 @@ int main(void)
         strcpy(string, "Best");
         font_printStr(830 - font_strWidth(string), 120-36, string);
         graph_line(600-90, 120-8, 840, 120-8, COLOR_DGRAY);
-        temp_last = 0;
-        temp_best = 0;
         for(int i = 0; i < LIST_SIZE; i++) {
           font_setColor2(COLOR_WHITE,COLOR_BLACK);
           sprintf(string, "%d km/h", list_speeds[i]);
           font_printStr(600 - font_strWidth(string), 120+i*30, string);
 
-          if(list_last_speeds[i] > 0.0f)
-            sprintf(string, "%.1f s", list_last_speeds[i] - temp_last);
+          if(graph_relative && list_last_speeds_relative[i] > 0.0f)
+            sprintf(string, "%.1f s", list_last_speeds_relative[i]);
+          else if(!graph_relative && list_last_speeds[i] > 0.0f)
+            sprintf(string, "%.1f s", list_last_speeds[i]);
           else {
             font_setColor2(COLOR_DGRAY,COLOR_BLACK);
             strcpy(string, "---");
           }
-          if(graph_relative) temp_last = list_last_speeds[i];
           font_printStr(735 - font_strWidth(string), 120+i*30, string);
 
           font_setColor2(COLOR_WHITE,COLOR_BLACK);
-          if(list_best_speeds[i] > 0.0f)
-            sprintf(string, "%.1f s", list_best_speeds[i] - temp_best);
+          if(graph_relative && list_best_speeds_relative[i] > 0.0f)
+            sprintf(string, "%.1f s", list_best_speeds_relative[i]);
+          else if(!graph_relative && list_best_speeds[i] > 0.0f)
+            sprintf(string, "%.1f s", list_best_speeds[i]);
           else {
             font_setColor2(COLOR_DGRAY,COLOR_BLACK);
             strcpy(string, "---");
           }
-          if(graph_relative) temp_best = list_best_speeds[i];
           font_printStr(830 - font_strWidth(string), 120+i*30, string);
         }
 
@@ -372,30 +389,30 @@ int main(void)
         strcpy(string, "Best");
         font_printStr(830 - font_strWidth(string), 310-36, string);
         graph_line(600-90, 310-8, 840, 310-8, COLOR_DGRAY);
-        temp_last = 0;
-        temp_best = 0;
         for(int i = 0; i < LIST_SIZE; i++) {
           font_setColor2(COLOR_WHITE,COLOR_BLACK);
           sprintf(string, "%d m", list_distances[i]);
           font_printStr(600 - font_strWidth(string), 310+i*30, string);
 
-          if(list_last_distances[i] > 0.0f)
-            sprintf(string, "%.1f s", list_last_distances[i] - temp_last);
+          if(graph_relative && list_last_distances_relative[i] > 0.0f)
+            sprintf(string, "%.1f s", list_last_distances_relative[i]);
+          else if(!graph_relative && list_last_distances[i] > 0.0f)
+            sprintf(string, "%.1f s", list_last_distances[i]);
           else {
             font_setColor2(COLOR_DGRAY,COLOR_BLACK);
             strcpy(string, "---");
           }
-          if(graph_relative) temp_last = list_last_distances[i];
           font_printStr(735 - font_strWidth(string), 310+i*30, string);
 
           font_setColor2(COLOR_WHITE,COLOR_BLACK);
-          if(list_best_distances[i] > 0.0f)
-            sprintf(string, "%.1f s", list_best_distances[i] - temp_best);
+          if(graph_relative && list_best_distances_relative[i] > 0.0f)
+            sprintf(string, "%.1f s", list_best_distances_relative[i]);
+          else if(!graph_relative && list_best_distances[i] > 0.0f)
+            sprintf(string, "%.1f s", list_best_distances[i]);
           else {
             font_setColor2(COLOR_DGRAY,COLOR_BLACK);
             strcpy(string, "---");
           }
-          if(graph_relative) temp_best = list_best_distances[i];
           font_printStr(830 - font_strWidth(string), 310+i*30, string);
         }
 
